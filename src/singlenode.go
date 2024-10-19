@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,17 +10,28 @@ import (
 )
 
 type Node struct {
-	data map[string]string
-	mu   sync.RWMutex
+	isParent bool
+	data     map[string]string
+	mu       sync.RWMutex
+
+	childNodes []string
+	parentNode string
 }
 
-func newNode() *Node {
+func NewNode() *Node {
 	return &Node{
-		data: make(map[string]string),
+		data:     make(map[string]string),
+		isParent: false,
 	}
 }
 
 func (n *Node) Put(w http.ResponseWriter, r *http.Request) {
+
+	if !n.isParent {
+		// Redirect to the parent node
+		http.Redirect(w, r, "http://"+n.parentNode+"/put", http.StatusTemporaryRedirect)
+		return
+	}
 
 	var body map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -65,23 +77,84 @@ func (n *Node) Get(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Value: %s\n", value)
 }
 
-// Delete removes a key-value pair from the node
 func (n *Node) Delete(w http.ResponseWriter, r *http.Request) {
-	// Extract key from the query parameters
+	if !n.isParent {
+		http.Redirect(w, r, "http://"+n.parentNode+"/delete?"+r.URL.RawQuery, http.StatusTemporaryRedirect)
+		return
+	}
+
 	key := r.URL.Query().Get("key")
 	if key == "" {
 		http.Error(w, "Missing key in request", http.StatusBadRequest)
 		return
 	}
 
-	// Remove the key-value pair from the database
 	n.mu.Lock()
 	delete(n.data, key)
 	n.mu.Unlock()
 
-	// Respond to the client
+	// Replicate deletion to child nodes
+	n.replicateDeletionToChildren(key)
+
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "Deleted key: %s\n", key)
+}
+
+func (n *Node) replicateDeletionToChildren(key string) {
+	for _, childAddr := range n.childNodes {
+		go func(addr string) {
+			deletionData := map[string]string{"key": key}
+			jsonData, _ := json.Marshal(deletionData)
+			resp, err := http.Post("http://"+addr+"/delete", "application/json", bytes.NewBuffer(jsonData))
+			if err != nil {
+				log.Printf("Failed to replicate deletion to %s: %v", addr, err)
+				return
+			}
+			resp.Body.Close()
+		}(childAddr)
+	}
+}
+
+func (n *Node) replicateToChildren(key, value string) {
+	for _, childAddr := range n.childNodes {
+		go func(addr string) {
+			replicationData := map[string]string{"key": key, "value": value}
+			jsonData, _ := json.Marshal(replicationData)
+			resp, err := http.Post("http://"+addr+"/replicate", "application/json", bytes.NewBuffer(jsonData))
+			if err != nil {
+				log.Printf("Failed to replicate to %s: %v", addr, err)
+				return
+			}
+			resp.Body.Close()
+		}(childAddr)
+	}
+}
+
+func (n *Node) Replicate(w http.ResponseWriter, r *http.Request) {
+	if n.isParent {
+		http.Error(w, "Parent node cannot receive replication data", http.StatusBadRequest)
+		return
+	}
+
+	var body map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid replication payload", http.StatusBadRequest)
+		return
+	}
+
+	key, keyOk := body["key"]
+	value, valueOk := body["value"]
+	if !keyOk || !valueOk {
+		http.Error(w, "Missing key or value in replication data", http.StatusBadRequest)
+		return
+	}
+
+	n.mu.Lock()
+	n.data[key] = value
+	n.mu.Unlock()
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "Replicated: %s -> %s\n", key, value)
 }
 
 func main() {
