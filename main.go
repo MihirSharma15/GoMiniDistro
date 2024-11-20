@@ -381,7 +381,7 @@ func main() {
 	flag.Parse()
 
 	parentNodeEnv := os.Getenv("PARENT_NODE")
-	fmt.Println(parentNodeEnv)
+
 	selfAddressEnv := os.Getenv("SELF_ADDRESS")
 
 	// Determine self address
