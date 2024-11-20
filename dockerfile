@@ -12,7 +12,8 @@ RUN go mod download
 COPY . .
 
 # Build the Go application
-RUN go build -o main .
+# Build the Go application for Linux
+RUN GOOS=linux GOARCH=amd64 go build -o myapp .
 
 ENTRYPOINT ["./myapp"]
 
