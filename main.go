@@ -395,6 +395,7 @@ func main() {
 			log.Fatalf("Failed to get self address: %v", err)
 		}
 		selfAddress = addr
+
 	}
 
 	// Parse child nodes if provided

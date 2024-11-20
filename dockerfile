@@ -4,8 +4,8 @@ FROM golang:1.17-alpine
 # Set the working directory inside the container
 WORKDIR /app
 
-# Copy go.mod and go.sum files and download dependencies
-COPY go.mod go.sum ./
+# Copy go.mod (and go.sum if available) files and download dependencies
+COPY go.mod ./
 RUN go mod download
 
 # Copy the rest of the application code
@@ -13,6 +13,8 @@ COPY . .
 
 # Build the Go application
 RUN go build -o main .
+
+ENTRYPOINT ["./myapp"]
 
 # Expose the application port (adjust if your app runs on a different port)
 EXPOSE 8080
