@@ -11,7 +11,7 @@ import (
 
 func benchmarkRequests(numRequests int, numPorts int) {
 	var wg sync.WaitGroup
-	concurrency := 25
+	concurrency := 10
 	ports := []int{8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087, 8088}
 	key := "name"
 
