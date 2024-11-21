@@ -9,12 +9,17 @@ import (
 	"time"
 )
 
-func main() {
+func benchmarkRequests(numRequests int, numPorts int) {
 	var wg sync.WaitGroup
-	numRequests := 1000
-	concurrency := 50
-	ports := []int{8080, 8081} // Adjust ports as needed
+	concurrency := 25
+	ports := []int{8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087, 8088}
 	key := "name"
+
+	// Check if numPorts is valid
+	if numPorts < 1 || numPorts > len(ports) {
+		fmt.Printf("Invalid number of ports: %d\n", numPorts)
+		return
+	}
 
 	// Seed the random number generator
 	rand.Seed(time.Now().UnixNano())
@@ -23,7 +28,13 @@ func main() {
 	requestCh := make(chan struct{}, concurrency)
 
 	var portIndex uint64 = 0
-	portsLen := uint64(len(ports))
+	portsLen := uint64(numPorts)
+
+	// Create a single http.Client
+	client := &http.Client{}
+
+	// Select the first numPorts from ports
+	selectedPorts := ports[:numPorts]
 
 	start := time.Now()
 
@@ -32,16 +43,12 @@ func main() {
 		requestCh <- struct{}{}
 		go func() {
 			defer wg.Done()
-			// Choose one method:
-			// Random Port Selection
-			// port := ports[rand.Intn(len(ports))]
-
 			// Round-Robin Port Selection
 			idx := atomic.AddUint64(&portIndex, 1)
-			port := ports[idx%portsLen]
+			port := selectedPorts[idx%portsLen]
 
 			url := fmt.Sprintf("http://localhost:%d/get?key=%s", port, key)
-			resp, err := http.Get(url)
+			resp, err := client.Get(url) // Use the single client
 			if err != nil {
 				fmt.Println("Error:", err)
 			} else {
@@ -53,6 +60,13 @@ func main() {
 
 	wg.Wait()
 	elapsed := time.Since(start)
-	fmt.Printf("Total time for %d requests: %s\n", numRequests, elapsed)
-	fmt.Printf("Average time per request: %s\n", elapsed/time.Duration(numRequests))
+	fmt.Printf("Total time for %d requests using %d ports: %s\n", numRequests, numPorts, elapsed)
+	fmt.Printf("Average time per request: %s\n\n", elapsed/time.Duration(numRequests))
+}
+
+func main() {
+	numRequests := 1000
+	for numPorts := 1; numPorts <= len([]int{8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087, 8088}); numPorts++ {
+		benchmarkRequests(numRequests, numPorts)
+	}
 }
