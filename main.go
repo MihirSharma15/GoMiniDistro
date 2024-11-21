@@ -34,22 +34,65 @@ func NewNode(isParent bool, parentNode string, childNodes []string, selfAddress 
 }
 
 func (n *Node) Put(w http.ResponseWriter, r *http.Request) {
-
 	if !n.isParent {
 		if n.parentNode == "" {
 			http.Error(w, "Parent node not available", http.StatusInternalServerError)
 			return
 		}
-		http.Redirect(w, r, "http://"+n.parentNode+"/put", http.StatusTemporaryRedirect)
+
+		// Read the request body
+		bodyBytes, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusInternalServerError)
+			return
+		}
+		// Restore the request body for further use
+		r.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		// Create a new request to the parent node
+		url := "http://" + n.parentNode + "/put"
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+		if err != nil {
+			http.Error(w, "Failed to create request to parent node", http.StatusInternalServerError)
+			return
+		}
+		// Copy the headers
+		req.Header = r.Header.Clone()
+		req.Header.Set("X-Forwarded-For", r.RemoteAddr)
+
+		// Send the request to the parent node
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			http.Error(w, "Failed to forward request to parent node", http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		// Read the response from the parent node
+		responseBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			http.Error(w, "Failed to read response from parent node", http.StatusInternalServerError)
+			return
+		}
+
+		// Write the response back to the client
+		for k, v := range resp.Header {
+			for _, vv := range v {
+				w.Header().Add(k, vv)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		w.Write(responseBytes)
 		return
 	}
 
+	// Existing code for parent node handling
 	var body map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
 	}
-
 	defer r.Body.Close()
 
 	key, keyOk := body["key"]
