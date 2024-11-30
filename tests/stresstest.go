@@ -11,31 +11,25 @@ import (
 
 func benchmarkRequests(numRequests int, numPorts int) {
 	var wg sync.WaitGroup
-	concurrency := 10
-	ports := []int{8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087, 8088}
+	concurrency := 5     // Reduced concurrency
+	ports := []int{8080} // Use a single port
 	key := "name"
 
-	// Check if numPorts is valid
-	if numPorts < 1 || numPorts > len(ports) {
-		fmt.Printf("Invalid number of ports: %d\n", numPorts)
-		return
-	}
-
-	// Seed the random number generator
 	rand.Seed(time.Now().UnixNano())
-
-	// Channel to limit concurrency
 	requestCh := make(chan struct{}, concurrency)
 
 	var portIndex uint64 = 0
 	portsLen := uint64(numPorts)
 
-	// Create a single http.Client
-	client := &http.Client{}
+	// Custom Transport to increase idle connections
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+	}
+	client := &http.Client{
+		Transport: transport,
+	}
 
-	// Select the first numPorts from ports
 	selectedPorts := ports[:numPorts]
-
 	start := time.Now()
 
 	for i := 0; i < numRequests; i++ {
@@ -43,12 +37,11 @@ func benchmarkRequests(numRequests int, numPorts int) {
 		requestCh <- struct{}{}
 		go func() {
 			defer wg.Done()
-			// Round-Robin Port Selection
 			idx := atomic.AddUint64(&portIndex, 1)
 			port := selectedPorts[idx%portsLen]
 
 			url := fmt.Sprintf("http://localhost:%d/get?key=%s", port, key)
-			resp, err := client.Get(url) // Use the single client
+			resp, err := client.Get(url)
 			if err != nil {
 				fmt.Println("Error:", err)
 			} else {
@@ -65,8 +58,7 @@ func benchmarkRequests(numRequests int, numPorts int) {
 }
 
 func main() {
-	numRequests := 1000
-	for numPorts := 1; numPorts <= len([]int{8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087, 8088}); numPorts++ {
-		benchmarkRequests(numRequests, numPorts)
-	}
+	numRequests := 10000
+	numPorts := 1 // Using only one port
+	benchmarkRequests(numRequests, numPorts)
 }
